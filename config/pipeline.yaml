@@ -1,0 +1,27 @@
+ingestion:
+  max_records_per_run: 1000000
+  failure_rate_threshold: 0.05
+
+embedding:
+  active_model: openai
+  batch_size: 100
+  use_gpu: true
+
+retrieval:
+  top_k: 50
+  vector_weight: 0.5
+  keyword_weight: 0.3
+  metadata_weight: 0.2
+  confidence_threshold: 0.7
+
+generation:
+  llm_model: gpt-4o
+  streaming_enabled: true
+
+chat:
+  short_term_memory_turns: 10
+  per_user_rate_limit: 60
+
+monitoring:
+  faithfulness_threshold: 0.85
+  toxicity_threshold: 0.05
