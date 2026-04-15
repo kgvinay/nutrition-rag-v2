@@ -9,7 +9,7 @@ services:
     environment:
       QDRANT__API_KEY: ${QDRANT_API_KEY:-}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -18,7 +18,7 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    command: redis-server
     volumes:
       - redis_data:/data
     healthcheck:
