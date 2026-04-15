@@ -96,8 +96,13 @@ class ChatOrchestrator:
         query = state.get("query", "")
         user_profile = state.get("user_profile")
         must_filters = self.personalization.build_must_filters(user_profile)
-        chunks = await self.searcher.search(query, must_filters=must_filters if must_filters else None)
-        state["retrieved_chunks"] = chunks
+        try:
+            chunks = await self.searcher.search(query, must_filters=must_filters if must_filters else None)
+            state["retrieved_chunks"] = chunks
+        except Exception as e:
+            logger.warning("Retrieval failed, continuing with empty context: %s", e)
+            state["retrieved_chunks"] = []
+            state["error"] = f"Retrieval unavailable: {type(e).__name__}"
         state["metadata"] = state.get("metadata", {})
         state["metadata"]["retrieval_latency_ms"] = (time.time() - start) * 1000
         return state
@@ -105,8 +110,12 @@ class ChatOrchestrator:
     async def _rerank(self, state: PipelineState) -> PipelineState:
         chunks = state.get("retrieved_chunks", [])
         query = state.get("query", "")
-        reranked = await self.reranker.rerank(query, chunks)
-        state["reranked_chunks"] = reranked
+        try:
+            reranked = await self.reranker.rerank(query, chunks)
+            state["reranked_chunks"] = reranked
+        except Exception as e:
+            logger.warning("Reranking failed, using original order: %s", e)
+            state["reranked_chunks"] = chunks
         return state
 
     async def _filter_context(self, state: PipelineState) -> PipelineState:
@@ -121,15 +130,25 @@ class ChatOrchestrator:
         chunks = state.get("filtered_chunks", [])
         history = state.get("conversation_history", [])
         messages = self.prompt_builder.build_prompt(query, chunks, history)
-        result = await self.generator.generate(messages)
-        response = result.response
-        response, cited_ids = self.citation.inject(response, chunks)
-        response = self.disclaimer.prepend(response)
-        result.response = response
-        result.cited_chunk_ids = cited_ids
-        result.generation_latency_ms = (time.time() - start) * 1000
-        state["generation_result"] = result
-        state["response"] = response
+        try:
+            result = await self.generator.generate(messages)
+            response = result.response
+            response, cited_ids = self.citation.inject(response, chunks)
+            response = self.disclaimer.prepend(response)
+            result.response = response
+            result.cited_chunk_ids = cited_ids
+            result.generation_latency_ms = (time.time() - start) * 1000
+            state["generation_result"] = result
+            state["response"] = response
+        except Exception as e:
+            logger.error("Generation failed: %s", e)
+            fallback = "I'm unable to generate a response right now due to a service issue. Please try again later."
+            state["response"] = self.disclaimer.prepend(fallback)
+            state["generation_result"] = GenerationResult(
+                response=state["response"],
+                generation_latency_ms=(time.time() - start) * 1000,
+            )
+            state["error"] = f"Generation failed: {type(e).__name__}"
         return state
 
     async def _apply_guardrails(self, state: PipelineState) -> PipelineState:

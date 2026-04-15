@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nutrition RAG Chat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        #app { width: 100%; max-width: 800px; height: 95vh; display: flex; flex-direction: column; background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); overflow: hidden; }
+        #header { padding: 16px 24px; background: #16a34a; color: #fff; font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+        #header span { font-size: 24px; }
+        #disclaimer-bar { background: #fef3c7; color: #92400e; padding: 8px 24px; font-size: 13px; text-align: center; }
+        #messages { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+        .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
+        .msg.user { align-self: flex-end; background: #16a34a; color: #fff; border-bottom-right-radius: 4px; }
+        .msg.bot { align-self: flex-start; background: #f3f4f6; color: #1f2937; border-bottom-left-radius: 4px; }
+        .msg.bot .source { font-size: 11px; color: #6b7280; margin-top: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px; }
+        .typing { align-self: flex-start; color: #9ca3af; font-style: italic; font-size: 13px; }
+        #input-area { padding: 16px 24px; border-top: 1px solid #e5e7eb; display: flex; gap: 10px; }
+        #query { flex: 1; padding: 12px 16px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; outline: none; }
+        #query:focus { border-color: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,0.2); }
+        #send { padding: 12px 24px; background: #16a34a; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        #send:hover { background: #15803d; }
+        #send:disabled { background: #9ca3af; cursor: not-allowed; }
+        #status { padding: 8px 24px; font-size: 12px; color: #6b7280; text-align: center; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="header"><span>&#x1F96C;</span> Nutrition RAG Chat</div>
+        <div id="disclaimer-bar">This is not medical advice. Consult a licensed professional.</div>
+        <div id="messages">
+            <div class="msg bot">Hello! I'm your nutrition assistant. Ask me about food composition, calories, protein, vitamins, and more. I search USDA, FDA, and other nutrition databases to give you accurate, cited answers.</div>
+        </div>
+        <div id="input-area">
+            <input id="query" type="text" placeholder="Ask about nutrition... (e.g. How much protein in chicken breast?)" autocomplete="off" />
+            <button id="send">Send</button>
+        </div>
+        <div id="status">Ready</div>
+    </div>
+    <script>
+        const messages = document.getElementById('messages');
+        const queryInput = document.getElementById('query');
+        const sendBtn = document.getElementById('send');
+        const statusEl = document.getElementById('status');
+        let conversationId = crypto.randomUUID();
+
+        function addMsg(text, cls) {
+            const div = document.createElement('div');
+            div.className = 'msg ' + cls;
+            div.textContent = text;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+            return div;
+        }
+
+        function addBotMsg(html) {
+            const div = document.createElement('div');
+            div.className = 'msg bot';
+            div.innerHTML = html;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+            return div;
+        }
+
+        function addTyping() {
+            const div = document.createElement('div');
+            div.className = 'typing';
+            div.id = 'typing';
+            div.textContent = 'Thinking...';
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function removeTyping() {
+            const el = document.getElementById('typing');
+            if (el) el.remove();
+        }
+
+        async function send() {
+            const q = queryInput.value.trim();
+            if (!q) return;
+            queryInput.value = '';
+            sendBtn.disabled = true;
+            statusEl.textContent = 'Sending...';
+            addMsg(q, 'user');
+            addTyping();
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: q, conversation_id: conversationId })
+                });
+                removeTyping();
+
+                if (!res.ok) {
+                    const err = await res.text();
+                    addMsg('Error: ' + (err || res.statusText), 'bot');
+                } else {
+                    const data = await res.json();
+                    const responseDiv = addBotMsg(escapeHtml(data.response));
+                    statusEl.textContent = 'Latency: ' + Math.round(data.latency_ms) + 'ms | Trace: ' + data.trace_id?.substring(0, 8);
+                    if (data.conversation_id) conversationId = data.conversation_id;
+                }
+            } catch (e) {
+                removeTyping();
+                addMsg('Connection error. Is the server running?', 'bot');
+                statusEl.textContent = 'Connection error';
+            }
+            sendBtn.disabled = false;
+            queryInput.focus();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/\[Source: ([^\]]+)\]/g, '<span class="source">[Source: $1]</span>');
+        }
+
+        sendBtn.addEventListener('click', send);
+        queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+        queryInput.focus();
+    </script>
+</body>
+</html>

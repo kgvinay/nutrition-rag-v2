@@ -4,8 +4,9 @@ import time
 import uuid
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from nutrition_rag import settings
 from nutrition_rag.core.models import (
@@ -26,8 +27,18 @@ from nutrition_rag.pipelines.ingestion.connectors.upload import UserUploadConnec
 from nutrition_rag.pipelines.ingestion.orchestrator import IngestionPipeline
 from nutrition_rag.pipelines.monitoring.trace_logger import TraceLogger
 from nutrition_rag.pipelines.monitoring.business_metrics import BusinessMetrics
+import pathlib
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import logging
+
+    logging.getLogger(__name__).error("Unhandled exception: %s", exc, exc_info=True)
+    return JSONResponse(status_code=503, content={"detail": str(exc), "type": type(exc).__name__})
+
 
 _short_term = ShortTermMemory(settings)
 _long_term = LongTermMemory(settings)
@@ -38,6 +49,11 @@ _trace_logger = TraceLogger(settings)
 _business_metrics = BusinessMetrics()
 _upload_connector = UserUploadConnector()
 _ingestion_pipeline = IngestionPipeline(settings)
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/chat-ui")
 
 
 @app.get("/health")
@@ -145,3 +161,7 @@ async def ingest_upload(file: UploadFile = File(...)):
 @app.post("/ingest/trigger")
 async def trigger_ingestion():
     return {"status": "triggered", "message": "Ingestion pipeline started"}
+
+
+_static_dir = pathlib.Path(__file__).parent / "static"
+app.mount("/chat-ui", StaticFiles(directory=str(_static_dir), html=True), name="chat-ui")

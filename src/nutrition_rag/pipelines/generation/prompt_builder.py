@@ -29,7 +29,7 @@ class PromptBuilder:
 
     def build_context_section(self, chunks: list[Chunk]) -> str:
         if not chunks:
-            return "No relevant context found."
+            return "No specific retrieved context is available. Answer based on your general nutrition knowledge, but clearly state that the response is not sourced from the database and may be less precise."
         sections = []
         for i, chunk in enumerate(chunks, 1):
             source_info = f"[Source: {chunk.id}]"
